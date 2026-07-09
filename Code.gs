@@ -1,5 +1,4 @@
-const SHEET_NAME = 'NutritionEntries';
-const HEADERS = ['timestamp', 'date', 'meal', 'calories', 'protein', 'source'];
+const FIREBASE_PATH = 'entries';
 
 function doGet() {
   return HtmlService.createTemplateFromFile('index')
@@ -13,20 +12,7 @@ function include(filename) {
 }
 
 function getDashboardData() {
-  const sheet = getOrCreateSheet();
-  const rows = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 0), HEADERS.length).getValues();
-  const entries = rows
-    .filter((row) => row[0])
-    .map((row) => ({
-      timestamp: row[0],
-      date: row[1],
-      meal: row[2],
-      calories: Number(row[3]) || 0,
-      protein: Number(row[4]) || 0,
-      source: row[5] || 'chat'
-    }))
-    .reverse();
-
+  const entries = getFirebaseEntries();
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const todayEntries = entries.filter((entry) => entry.date === today);
   const summary = {
@@ -48,29 +34,70 @@ function saveEntry(mealText) {
     throw new Error('Please enter a meal description.');
   }
 
-  const sheet = getOrCreateSheet();
   const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const estimate = estimateNutrition(trimmed);
-  const row = [new Date(), today, trimmed, estimate.calories, estimate.protein, 'chat'];
-  sheet.appendRow(row);
+  const entry = {
+    timestamp: new Date().toISOString(),
+    date: today,
+    meal: trimmed,
+    calories: estimate.calories,
+    protein: estimate.protein,
+    source: 'chat'
+  };
 
+  writeFirebaseEntry(entry);
   return getDashboardData();
 }
 
-function getOrCreateSheet() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+function getFirebaseBaseUrl() {
+  const configuredUrl = PropertiesService.getScriptProperties().getProperty('FIREBASE_URL');
+  if (!configuredUrl) {
+    throw new Error('Missing Firebase URL. Add it to Script Properties as FIREBASE_URL.');
+  }
+  return configuredUrl.replace(/\/$/, '');
+}
 
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(SHEET_NAME);
+function getFirebaseEntries() {
+  const baseUrl = getFirebaseBaseUrl();
+  const response = UrlFetchApp.fetch(`${baseUrl}/${FIREBASE_PATH}.json`, {
+    method: 'get',
+    muteHttpExceptions: true,
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (response.getResponseCode() >= 400) {
+    throw new Error(`Firebase request failed: ${response.getContentText()}`);
   }
 
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(HEADERS);
-    sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold').setBackground('#e8f0fe');
-  }
+  const payload = JSON.parse(response.getContentText() || '{}');
+  const entries = Object.keys(payload || {})
+    .map((key) => ({
+      id: key,
+      ...(payload[key] || {})
+    }))
+    .sort((a, b) => new Date(b.timestamp || b.date) - new Date(a.timestamp || a.date));
 
-  return sheet;
+  return entries.map((entry) => ({
+    ...entry,
+    calories: Number(entry.calories) || 0,
+    protein: Number(entry.protein) || 0
+  }));
+}
+
+function writeFirebaseEntry(entry) {
+  const baseUrl = getFirebaseBaseUrl();
+  const response = UrlFetchApp.fetch(`${baseUrl}/${FIREBASE_PATH}.json`, {
+    method: 'post',
+    muteHttpExceptions: true,
+    contentType: 'application/json',
+    payload: JSON.stringify(entry)
+  });
+
+  if (response.getResponseCode() >= 400) {
+    throw new Error(`Firebase write failed: ${response.getContentText()}`);
+  }
 }
 
 function estimateNutrition(text) {

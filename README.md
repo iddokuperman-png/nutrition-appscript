@@ -4,11 +4,12 @@ This project uses Google Apps Script as the web app frontend and Firebase Realti
 
 ## Setup
 1. Create a Firebase project at https://firebase.google.com/
-2. Enable Realtime Database.
-3. Set database rules to allow reads/writes for authenticated users only or for testing allow public access.
-4. In Apps Script, add the Firebase App Script library or use fetch requests to the Firebase REST API.
-5. Replace the placeholder config in Code.gs with your Firebase project details.
+2. Enable the Realtime Database.
+3. Set the database rules to allow reads and writes for testing, or restrict them to authenticated users later.
+4. In Apps Script, open Project Settings and add a script property named `FIREBASE_URL` with your Realtime Database URL, for example:
+   `https://your-project-id-default-rtdb.firebaseio.com`
+5. Deploy the web app again after saving the script property.
 
 ## Notes
-- The current app stores entries in Firebase under the `entries` node.
-- Each entry contains: timestamp, date, meal, calories, protein, source.
+- The app stores entries in Firebase under the `entries` node.
+- Each entry contains: timestamp, date, meal, calories, protein, and source.
